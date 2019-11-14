@@ -1,9 +1,21 @@
 # degit changelog
 
+## 2.2.2
+
+- Improve CLI error logging ([#49](https://github.com/Rich-Harris/degit/pull/49))
+
+## 2.2.1
+
+- Update `help.md` for Sourcehut support
+
+## 2.2.0
+
+- Sourcehut support ([#85](https://github.com/Rich-Harris/degit/pull/85))
+
 ## 2.1.4
 
-* Fix actions ([#65](https://github.com/Rich-Harris/degit/pull/65))
-* Improve CLI error logging ([#46](https://github.com/Rich-Harris/degit/pull/46))
+- Fix actions ([#65](https://github.com/Rich-Harris/degit/pull/65))
+- Improve CLI error logging ([#46](https://github.com/Rich-Harris/degit/pull/46))
 
 ## 2.1.3
 

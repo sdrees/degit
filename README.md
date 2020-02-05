@@ -70,6 +70,24 @@ If the second argument is omitted, the repo will be cloned to the current direct
 degit user/repo my-new-project
 ```
 
+### Specify a subdirectory
+
+To clone a specific subdirectory instead of the entire repo, just add it to the argument:
+
+```bash
+degit user/repo/subdirectory
+```
+
+### HTTPS proxying
+
+If you have an `https_proxy` environment variable, Degit will use it.
+
+### Private repositories
+
+Private repos can be cloned by specifying `--mode=git` (the default is `tar`). In this mode, Degit will use `git` under the hood. It's much slower than fetching a tarball, which is why it's not the default.
+
+Note: this clones over SSH, not HTTPS.
+
 ### See all options
 
 ```bash

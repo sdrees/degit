@@ -1,5 +1,29 @@
 # degit changelog
 
+## 2.8.0
+
+* Sort by recency in interactive mode
+
+## 2.7.0
+
+* Bundle for a faster install
+
+## 2.6.0
+
+* Add an interactive mode ([#4](https://github.com/Rich-Harris/degit/issues/4))
+
+## 2.5.0
+
+* Add `--mode=git` for cloning private repos ([#29](https://github.com/Rich-Harris/degit/pull/29))
+
+## 2.4.0
+
+* Clone subdirectories from repos (`user/repo/subdir`)
+
+## 2.3.0
+
+* Support HTTPS proxying where `https_proxy` env var is supplied ([#26](https://github.com/Rich-Harris/degit/issues/26))
+
 ## 2.2.2
 
 - Improve CLI error logging ([#49](https://github.com/Rich-Harris/degit/pull/49))

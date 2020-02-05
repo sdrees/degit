@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import homeOrTmp from 'home-or-tmp';
 import tar from 'tar';
 import EventEmitter from 'events';
 import chalk from 'chalk';
@@ -14,9 +13,10 @@ import {
 	stashFiles,
 	unstashFiles,
 	degitConfigName,
-} from './utils';
+	base
+} from './utils.js';
 
-const base = path.join(homeOrTmp, '.degit');
+const validModes = new Set(['tar', 'git']);
 
 export default function degit(src, opts) {
 	return new Degit(src, opts);
@@ -30,8 +30,14 @@ class Degit extends EventEmitter {
 		this.cache = opts.cache;
 		this.force = opts.force;
 		this.verbose = opts.verbose;
+		this.proxy = process.env.https_proxy; // TODO allow setting via --proxy
 
 		this.repo = parse(src);
+		this.mode = opts.mode || this.repo.mode;
+
+		if (!validModes.has(this.mode)) {
+			throw new Error(`Valid modes are ${Array.from(validModes).join(', ')}`);
+		}
 
 		this._hasStashed = false;
 
@@ -64,7 +70,7 @@ class Degit extends EventEmitter {
 					process.exit(1);
 				});
 			},
-			remove: this.remove.bind(this),
+			remove: this.remove.bind(this)
 		};
 	}
 
@@ -82,66 +88,15 @@ class Degit extends EventEmitter {
 	async clone(dest) {
 		this._checkDirIsEmpty(dest);
 
-		const repo = this.repo;
+		const { repo } = this;
 
 		const dir = path.join(base, repo.site, repo.user, repo.name);
-		const cached = tryRequire(path.join(dir, 'map.json')) || {};
 
-		const hash = this.cache
-			? this._getHashFromCache(repo, cached)
-			: await this._getHash(repo, cached);
-
-		if (!hash) {
-			// TODO 'did you mean...?'
-			throw new DegitError(`could not find commit hash for ${repo.ref}`, {
-				code: 'MISSING_REF',
-				ref: repo.ref,
-			});
+		if (this.mode === 'tar') {
+			await this._cloneWithTar(dir, dest);
+		} else {
+			await this._cloneWithGit(dir, dest);
 		}
-
-		const file = `${dir}/${hash}.tar.gz`;
-		const url =
-			repo.site === 'gitlab'
-				? `${repo.url}/repository/archive.tar.gz?ref=${hash}`
-				: repo.site === 'bitbucket'
-				? `${repo.url}/get/${hash}.tar.gz`
-				: `${repo.url}/archive/${hash}.tar.gz`;
-
-		try {
-			if (!this.cache) {
-				try {
-					fs.statSync(file);
-					this._verbose({
-						code: 'FILE_EXISTS',
-						message: `${file} already exists locally`,
-					});
-				} catch (err) {
-					mkdirp(path.dirname(file));
-					this._verbose({
-						code: 'DOWNLOADING',
-						message: `downloading ${url} to ${file}`,
-					});
-
-					await fetch(url, file);
-				}
-			}
-		} catch (err) {
-			throw new DegitError(`could not download ${url}`, {
-				code: 'COULD_NOT_DOWNLOAD',
-				url,
-				original: err,
-			});
-		}
-
-		updateCache(dir, repo, hash, cached);
-
-		this._verbose({
-			code: 'EXTRACTING',
-			message: `extracting ${file} to ${dest}`,
-		});
-
-		mkdirp(dest);
-		await untar(file, dest);
 
 		this._info({
 			code: 'SUCCESS',
@@ -149,7 +104,7 @@ class Degit extends EventEmitter {
 				repo.ref
 			)}${dest !== '.' ? ` to ${dest}` : ''}`,
 			repo,
-			dest,
+			dest
 		});
 
 		const directives = this._getDirectives(dest);
@@ -186,7 +141,7 @@ class Degit extends EventEmitter {
 						code: 'FILE_DOES_NOT_EXIST',
 						message: `action wants to remove ${chalk.bold(
 							file
-						)} but it does not exist`,
+						)} but it does not exist`
 					});
 					return null;
 				}
@@ -198,7 +153,7 @@ class Degit extends EventEmitter {
 				code: 'REMOVED',
 				message: `removed: ${chalk.bold(
 					removedFiles.map(d => chalk.bold(d)).join(', ')
-				)}`,
+				)}`
 			});
 		}
 	}
@@ -210,20 +165,20 @@ class Degit extends EventEmitter {
 				if (this.force) {
 					this._info({
 						code: 'DEST_NOT_EMPTY',
-						message: `destination directory is not empty. Using options.force, continuing`,
+						message: `destination directory is not empty. Using options.force, continuing`
 					});
 				} else {
 					throw new DegitError(
 						`destination directory is not empty, aborting. Use options.force to override`,
 						{
-							code: 'DEST_NOT_EMPTY',
+							code: 'DEST_NOT_EMPTY'
 						}
 					);
 				}
 			} else {
 				this._verbose({
 					code: 'DEST_IS_EMPTY',
-					message: `destination directory is empty`,
+					message: `destination directory is empty`
 				});
 			}
 		} catch (err) {
@@ -260,7 +215,7 @@ class Degit extends EventEmitter {
 			const hash = cached[repo.ref];
 			this._info({
 				code: 'USING_CACHE',
-				message: `using cached commit hash ${hash}`,
+				message: `using cached commit hash ${hash}`
 			});
 			return hash;
 		}
@@ -271,7 +226,7 @@ class Degit extends EventEmitter {
 			if (ref.name === selector) {
 				this._verbose({
 					code: 'FOUND_MATCH',
-					message: `found matching commit hash: ${ref.hash}`,
+					message: `found matching commit hash: ${ref.hash}`
 				});
 				return ref.hash;
 			}
@@ -283,17 +238,96 @@ class Degit extends EventEmitter {
 			if (ref.hash.startsWith(selector)) return ref.hash;
 		}
 	}
+
+	async _cloneWithTar(dir, dest) {
+		const { repo } = this;
+
+		const cached = tryRequire(path.join(dir, 'map.json')) || {};
+
+		const hash = this.cache
+			? this._getHashFromCache(repo, cached)
+			: await this._getHash(repo, cached);
+
+		const subdir = repo.subdir ? `${repo.name}-${hash}${repo.subdir}` : null;
+
+		if (!hash) {
+			// TODO 'did you mean...?'
+			throw new DegitError(`could not find commit hash for ${repo.ref}`, {
+				code: 'MISSING_REF',
+				ref: repo.ref
+			});
+		}
+
+		const file = `${dir}/${hash}.tar.gz`;
+		const url =
+			repo.site === 'gitlab'
+				? `${repo.url}/repository/archive.tar.gz?ref=${hash}`
+				: repo.site === 'bitbucket'
+				? `${repo.url}/get/${hash}.tar.gz`
+				: `${repo.url}/archive/${hash}.tar.gz`;
+
+		try {
+			if (!this.cache) {
+				try {
+					fs.statSync(file);
+					this._verbose({
+						code: 'FILE_EXISTS',
+						message: `${file} already exists locally`
+					});
+				} catch (err) {
+					mkdirp(path.dirname(file));
+
+					if (this.proxy) {
+						this._verbose({
+							code: 'PROXY',
+							message: `using proxy ${this.proxy}`
+						});
+					}
+
+					this._verbose({
+						code: 'DOWNLOADING',
+						message: `downloading ${url} to ${file}`
+					});
+
+					await fetch(url, file, this.proxy);
+				}
+			}
+		} catch (err) {
+			throw new DegitError(`could not download ${url}`, {
+				code: 'COULD_NOT_DOWNLOAD',
+				url,
+				original: err
+			});
+		}
+
+		updateCache(dir, repo, hash, cached);
+
+		this._verbose({
+			code: 'EXTRACTING',
+			message: `extracting ${
+				subdir ? repo.subdir + ' from ' : ''
+			}${file} to ${dest}`
+		});
+
+		mkdirp(dest);
+		await untar(file, dest, subdir);
+	}
+
+	async _cloneWithGit(dir, dest) {
+		await exec(`git clone ${this.repo.ssh} ${dest}`);
+		await exec(`rm -rf ${path.resolve(dest, '.git')}`);
+	}
 }
 
 const supported = new Set(['github', 'gitlab', 'bitbucket', 'git.sr.ht']);
 
 function parse(src) {
-	const match = /^(?:https:\/\/([^/]+)\/|git@([^/]+)[:/]|([^/]+)[:/])?([^/\s]+)\/([^/\s#]+)(?:#(.+))?/.exec(
+	const match = /^(?:(?:https:\/\/)?([^:/]+\.[^:/]+)\/|git@([^:/]+)[:/]|([^/]+):)?([^/\s]+)\/([^/\s#]+)(?:((?:\/[^/\s#]+)+))?(?:\/)?(?:#(.+))?/.exec(
 		src
 	);
 	if (!match) {
 		throw new DegitError(`could not parse ${src}`, {
-			code: 'BAD_SRC',
+			code: 'BAD_SRC'
 		});
 	}
 
@@ -305,28 +339,36 @@ function parse(src) {
 		throw new DegitError(
 			`degit supports GitHub, GitLab, Sourcehut and BitBucket`,
 			{
-				code: 'UNSUPPORTED_HOST',
+				code: 'UNSUPPORTED_HOST'
 			}
 		);
 	}
 
 	const user = match[4];
 	const name = match[5].replace(/\.git$/, '');
-	const ref = match[6] || 'master';
+	const subdir = match[6];
+	const ref = match[7] || 'master';
 
-	const url = `https://${site}.${
+	const domain = `${site}.${
 		site === 'bitbucket' ? 'org' : site === 'git.sr.ht' ? '' : 'com'
-	}/${user}/${name}`;
+	}`;
+	const url = `https://${domain}/${user}/${name}`;
+	const ssh = `git@${domain}:${user}/${name}`;
 
-	return { site, user, name, ref, url };
+	const mode = supported.has(site) ? 'tar' : 'git';
+
+	return { site, user, name, ref, url, ssh, subdir, mode };
 }
 
-async function untar(file, dest) {
-	return tar.extract({
-		file,
-		strip: 1,
-		C: dest,
-	});
+async function untar(file, dest, subdir = null) {
+	return tar.extract(
+		{
+			file,
+			strip: subdir ? subdir.split('/').length : 1,
+			C: dest
+		},
+		subdir ? [subdir] : []
+	);
 }
 
 async function fetchRefs(repo) {
@@ -342,14 +384,14 @@ async function fetchRefs(repo) {
 				if (ref === 'HEAD') {
 					return {
 						type: 'HEAD',
-						hash,
+						hash
 					};
 				}
 
 				const match = /refs\/(\w+)\/(.+)/.exec(ref);
 				if (!match)
 					throw new DegitError(`could not parse ${ref}`, {
-						code: 'BAD_REF',
+						code: 'BAD_REF'
 					});
 
 				return {
@@ -360,19 +402,27 @@ async function fetchRefs(repo) {
 							? 'ref'
 							: match[1],
 					name: match[2],
-					hash,
+					hash
 				};
 			});
 	} catch (error) {
 		throw new DegitError(`could not fetch remote ${repo.url}`, {
 			code: 'COULD_NOT_FETCH',
 			url: repo.url,
-			original: error,
+			original: error
 		});
 	}
 }
 
 function updateCache(dir, repo, hash, cached) {
+	// update access logs
+	const logs = tryRequire(path.join(dir, 'access.json')) || {};
+	logs[repo.ref] = new Date().toISOString();
+	fs.writeFileSync(
+		path.join(dir, 'access.json'),
+		JSON.stringify(logs, null, '  ')
+	);
+
 	if (cached[repo.ref] === hash) return;
 
 	const oldHash = cached[repo.ref];

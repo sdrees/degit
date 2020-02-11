@@ -5,8 +5,6 @@ import mri from 'mri';
 import glob from 'tiny-glob/sync.js';
 import fuzzysearch from 'fuzzysearch';
 import enquirer from 'enquirer';
-
-// eslint-disable-next-line import/no-unresolved
 import degit from './index.js';
 import { tryRequire, base } from './utils.js';
 
@@ -62,7 +60,10 @@ async function main() {
 
 		const choices = glob(`**/map.json`, { cwd: base })
 			.map(getChoice)
-			.flat()
+			.reduce(
+				(accumulator, currentValue) => accumulator.concat(currentValue),
+				[]
+			)
 			.sort((a, b) => {
 				const aTime = accessLookup.get(a.value) || 0;
 				const bTime = accessLookup.get(b.value) || 0;

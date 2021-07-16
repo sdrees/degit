@@ -1,5 +1,22 @@
 # degit changelog
 
+## 2.8.4
+
+* Whoops
+
+## 2.8.3
+
+* Reinstate `#!/usr/bin/env node` ([#273](https://github.com/Rich-Harris/degit/issues/273))
+
+## 2.8.2
+
+* Fix `bin`/`main` locations ([#273](https://github.com/Rich-Harris/degit/issues/273))
+* Update dependencies
+
+## 2.8.1
+
+* Use `HEAD` instead of `master` ([#243](https://github.com/Rich-Harris/degit/pull/243)])
+
 ## 2.8.0
 
 * Sort by recency in interactive mode
